@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
@@ -9,13 +9,17 @@ import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import * as Tone from 'tone';
-import { DiamondPortal } from '../components/DiamondPortal';
-import { AIStudio } from '../components/AIStudio';
-import { MusicStudio } from '../components/MusicStudio';
+const DiamondPortal = lazy(() => import('../components/DiamondPortal').then(({ DiamondPortal: Component }) => ({ default: Component })));
+const AIStudio = lazy(() => import('../components/AIStudio').then(({ AIStudio: Component }) => ({ default: Component })));
+const MusicStudio = lazy(() => import('../components/MusicStudio').then(({ MusicStudio: Component }) => ({ default: Component })));
+import { buildContactMailto } from '../lib/contact';
 import '../styles/belentani.css';
 
 gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
+
+const SECTION_IDS = ['home', 'artist', 'music', 'judas', 'portal', 'gallery', 'contact', 'studio'] as const;
+const SECTION_NAMES = ['01 // GENESIS', '02 // THE ARTIST', '03 // MUSIC', '04 // JUDAS ERA', '05 // THE FRAGMENTS', '06 // ART GALLERY', '07 // CONTACT', '08 // HYPER LAB'] as const;
+const ModuleFallback = ({ label }: { label: string }) => <div className="module-skeleton" role="status" aria-live="polite"><span>◆ MODULE SYNC</span><strong>{label}</strong><i /></div>;
 
 export default function BelentaniExperience() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,6 +34,7 @@ export default function BelentaniExperience() {
   const [cursorLabel, setCursorLabel] = useState('');
   const cursorDotRef = useRef<HTMLDivElement>(null);
   const cursorRingRef = useRef<HTMLDivElement>(null);
+  const lightboxCloseRef = useRef<HTMLButtonElement>(null);
   const scrollProgressRef = useRef(0);
 
   const completeChallenge = (id: string) => {
@@ -49,9 +54,7 @@ export default function BelentaniExperience() {
     const message = String(formData.get('message') ?? '').trim();
     setContactStatus('sending');
     try {
-      const subject = encodeURIComponent(`BELENTANI // Judas Era signal from ${name}`);
-      const body = encodeURIComponent(`Name: ${name}\nEmail: ${email}\n\n${message}`);
-      const mailto = `mailto:hello@belentani.com?subject=${subject}&body=${body}`;
+      const mailto = buildContactMailto({ name, email, message });
       const handoff = document.createElement('a');
       handoff.href = mailto;
       handoff.click();
@@ -373,8 +376,8 @@ export default function BelentaniExperience() {
   useEffect(() => {
     if (!bootComplete) return;
 
-    const sections = ['home', 'artist', 'music', 'judas', 'portal', 'gallery', 'contact', 'studio'];
-    const secNames = ['01 // GENESIS', '02 // THE ARTIST', '03 // MUSIC', '04 // JUDAS ERA', '05 // THE FRAGMENTS', '06 // ART GALLERY', '07 // CONTACT', '08 // HYPER LAB'];
+    const sections = SECTION_IDS;
+    const secNames = SECTION_NAMES;
     const context = gsap.context(() => {
       const intro = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.35 });
       intro.to('#preTitle', { opacity: 1, y: 0, duration: 0.8 })
@@ -434,6 +437,16 @@ export default function BelentaniExperience() {
   }, []);
 
   useEffect(() => {
+    if (!selectedArtwork) return;
+    const handleLightboxKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedArtwork(null);
+    };
+    document.addEventListener('keydown', handleLightboxKeyDown);
+    lightboxCloseRef.current?.focus();
+    return () => document.removeEventListener('keydown', handleLightboxKeyDown);
+  }, [selectedArtwork]);
+
+  useEffect(() => {
     const dot = cursorDotRef.current;
     const ring = cursorRingRef.current;
     if (!dot || !ring || window.matchMedia('(pointer: coarse)').matches) return;
@@ -469,6 +482,7 @@ export default function BelentaniExperience() {
 
   return (
     <div ref={containerRef} className="belentani-container">
+      <a className="skip-link" href="#main-content">SALTAR AL CONTENIDO</a>
       {/* Boot Screen */}
       <div id="boot-screen" className="boot-screen">
         <div className="boot-log"></div>
@@ -489,11 +503,11 @@ export default function BelentaniExperience() {
       {/* HUD Layer */}
       <div className="hud-layer">
         <div className="hud-top">
-          <a href="#" className="hud-logo">
+          <a href="#home" className="hud-logo" aria-label="BELENTANI — volver a GENESIS">
             BELENTANI<span>.</span>
           </a>
           <div className="hud-element">
-            <span id="sectionName">01 // GENESIS</span>
+            <span id="sectionName" aria-live="polite">01 // GENESIS</span>
           </div>
         </div>
         <div className="hud-bottom">
@@ -504,14 +518,14 @@ export default function BelentaniExperience() {
           </div>
           <div className="nav-dots">
             {['home', 'artist', 'music', 'judas', 'portal', 'gallery', 'contact', 'studio'].map((sec, i) => (
-              <button key={sec} type="button" id={`dot-${sec}`} aria-label={`Ir a ${sec}`} className={`nav-dot ${i === 0 ? 'active' : ''}`} onClick={() => jumpToSection(sec)}></button>
+              <button key={sec} type="button" id={`dot-${sec}`} aria-label={`Ir a ${SECTION_NAMES[i]}`} title={SECTION_NAMES[i]} aria-current={i === activeSection ? 'page' : undefined} className={`nav-dot ${i === activeSection ? 'active' : ''}`} onClick={() => jumpToSection(sec)}></button>
             ))}
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="content-wrapper">
+      <main id="main-content" className="content-wrapper" tabIndex={-1}>
         {/* GENESIS - Hero */}
         <section id="home" className="section hero-section">
           <div className="hero-content" data-parallax>
@@ -570,7 +584,7 @@ export default function BelentaniExperience() {
         <section id="music" className="section">
           <h2 className="section-title">MUSIC</h2>
           <div className="section-subtitle">◆ SONIC ARCHIVE ◆</div>
-          <div data-reveal><MusicStudio onListeningComplete={() => completeChallenge('music')} /></div>
+          <div data-reveal><Suspense fallback={<ModuleFallback label="SONIC ARCHIVE" />}><MusicStudio onListeningComplete={() => completeChallenge('music')} /></Suspense></div>
         </section>
 
         {/* JUDAS ERA */}
@@ -623,7 +637,7 @@ export default function BelentaniExperience() {
         <section id="portal" className="section">
           <h2 className="section-title">THE <span>FRAGMENTS</span></h2>
           <div className="section-subtitle">◆ INTERACTIVE PORTAL ◆</div>
-          <div data-reveal><DiamondPortal onComplete={() => completeChallenge('fragments')} onInteraction={() => completeChallenge('fragments')} /></div>
+          <div data-reveal><Suspense fallback={<ModuleFallback label="FRAGMENT PORTAL" />}><DiamondPortal onComplete={() => completeChallenge('fragments')} onInteraction={() => completeChallenge('fragments')} /></Suspense></div>
         </section>
 
         {/* ART GALLERY */}
@@ -636,7 +650,7 @@ export default function BelentaniExperience() {
               ['/manus-storage/about_1_7e5a39e8.png', 'THE RED WITNESS'],
               ['/manus-storage/about_2_907e9bb3.png', 'JUDAS PROFILE'],
               ['/manus-storage/belentani-artifact-core_b7299e47.png', 'OMEGA CORE'],
-            ].map(([src, alt]) => <figure className="gallery-item" key={src} data-reveal tabIndex={0} role="button" onClick={() => setSelectedArtwork(src)} onKeyDown={(event) => { if (event.key === 'Enter') setSelectedArtwork(src); }}><img src={src} alt={alt} /><figcaption>{alt} <span>OPEN ↗</span></figcaption></figure>)}
+            ].map(([src, alt]) => <figure className="gallery-item" key={src} data-reveal tabIndex={0} role="button" aria-label={`Abrir ${alt}`} aria-pressed={selectedArtwork === src} onClick={() => setSelectedArtwork(src)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedArtwork(src); } }}><img src={src} alt={alt} /><figcaption>{alt} <span>OPEN ↗</span></figcaption></figure>)}
           </div>
         </section>
 
@@ -645,12 +659,15 @@ export default function BelentaniExperience() {
           <h2 className="section-title">CONTACT</h2>
           <div className="section-subtitle">◆ GET IN TOUCH ◆</div>
           <form className="contact-form" onSubmit={handleContactSubmit} data-reveal>
-            <input name="name" type="text" placeholder="NAME" required />
-            <input name="email" type="email" placeholder="EMAIL" required />
-            <textarea name="message" placeholder="MESSAGE" rows={5} required></textarea>
+            <label className="sr-only" htmlFor="contact-name">Nombre</label>
+            <input id="contact-name" name="name" type="text" placeholder="NAME" autoComplete="name" required />
+            <label className="sr-only" htmlFor="contact-email">Email</label>
+            <input id="contact-email" name="email" type="email" placeholder="EMAIL" autoComplete="email" required />
+            <label className="sr-only" htmlFor="contact-message">Mensaje</label>
+            <textarea id="contact-message" name="message" placeholder="MESSAGE" rows={5} required></textarea>
             <button type="submit" className="cta-btn" style={{ opacity: 1, transform: 'none' }} disabled={contactStatus === 'sending'}>{contactStatus === 'sent' ? 'SIGNAL RECEIVED' : contactStatus === 'error' ? 'RETRY TRANSMISSION' : contactStatus === 'sending' ? 'TRANSMITTING...' : 'SEND MESSAGE'}</button>
-            {contactStatus === 'sent' && <small className="contact-status success">MAIL CLIENT HANDOFF READY</small>}
-            {contactStatus === 'error' && <small className="contact-status error">TRANSMISSION FAILED — USE hello@belentani.com</small>}
+            {contactStatus === 'sent' && <small id="contact-status" className="contact-status success" role="status">MAIL CLIENT HANDOFF READY</small>}
+            {contactStatus === 'error' && <small id="contact-status" className="contact-status error" role="alert">TRANSMISSION FAILED — USE hello@belentani.com</small>}
           </form>
           <div className="contact-links" data-reveal><a href="mailto:hello@belentani.com">hello@belentani.com</a><a href="https://www.instagram.com/belentani_/" target="_blank" rel="noopener noreferrer">INSTAGRAM ↗</a><a href="https://www.youtube.com/c/PedroMarcosSantosBelentani" target="_blank" rel="noopener noreferrer">YOUTUBE ↗</a></div>
         </section>
@@ -659,10 +676,10 @@ export default function BelentaniExperience() {
         <section id="studio" className="section">
           <h2 className="section-title">HYPER <span>LAB</span></h2>
           <div className="section-subtitle">◆ AI CREATIVE STUDIO ◆</div>
-          <AIStudio />
+          <Suspense fallback={<ModuleFallback label="HYPER LAB" />}><AIStudio /></Suspense>
         </section>
-      </div>
-      {selectedArtwork && <div className="lightbox" role="dialog" aria-modal="true" onClick={() => setSelectedArtwork(null)}><button type="button" onClick={() => setSelectedArtwork(null)} aria-label="Cerrar imagen">×</button><img src={selectedArtwork} alt="Judas Era artwork enlarged" /></div>}
+      </main>
+      {selectedArtwork && <div className="lightbox" role="dialog" aria-modal="true" aria-label="Visor de arte Judas Era" onClick={(event) => { if (event.target === event.currentTarget) setSelectedArtwork(null); }}><button ref={lightboxCloseRef} type="button" onClick={() => setSelectedArtwork(null)} aria-label="Cerrar imagen">×</button><img src={selectedArtwork} alt="Judas Era artwork enlarged" onClick={(event) => event.stopPropagation()} /></div>}
     </div>
   );
 }

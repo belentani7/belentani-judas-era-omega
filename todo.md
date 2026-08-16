@@ -130,3 +130,16 @@ Nota: esta lista conserva los pendientes previos y registra las nuevas solicitud
 - [x] Comparar la lógica original de animación con la implementación actual
 - [x] Restaurar la versión original o integrar sus partes sin alterar su identidad
 - [x] Validar visualmente la animación restaurada y guardar checkpoint de reversión
+
+- [x] Establecer matriz de 50 perfiles de evaluación (dirección de arte, UX, 3D, música, nichos jóvenes/adultos, accesibilidad, etc.)
+- [x] Conducir auditoría técnica y verificable basada en los 50 criterios de calidad del sistema
+
+- [x] Mejorar navegación accesible: skip link, aria-current, labels de HUD y foco visible sin alterar el core visual
+- [x] Hacer el lightbox navegable por teclado y cerrable con Escape sin cerrar accidentalmente al pulsar la imagen
+- [x] Añadir labels y autocompletado accesible al formulario de contacto y estado aria-live
+- [x] Mejorar interacción de galería y CTA con teclado y targets semánticos
+- [x] Revalidar build, tests y capturas después de estas mejoras no invasivas
+
+- [x] Reducir el bundle inicial mediante carga diferida de Music Studio, Diamond Portal y Hyper Lab sin tocar el core Three.js original
+
+- [x] Añadir una prueba Vitest para validar el handoff de contacto y evitar regresiones en el formulario
