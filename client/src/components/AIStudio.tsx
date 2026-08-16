@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import '../styles/ai-studio.css';
 
@@ -6,192 +6,124 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  timestamp: Date;
+  timestamp: string;
 }
 
-export function AIStudio() {
-  const [messages, setMessages] = useState<Message[]>([]);
+interface AIStudioProps {
+  onInteraction?: () => void;
+}
+
+const STORAGE_KEY = 'belentani-judas-hyper-lab-history';
+
+export function AIStudio({ onInteraction }: AIStudioProps) {
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored ? JSON.parse(stored) as Message[] : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<'chat' | 'lyrics' | 'analysis'>('chat');
+  const [mode, setMode] = useState<'chat' | 'lyrics' | 'analysis' | 'visual'>('chat');
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const chatMutation = trpc.llm.chat.useMutation();
+  const lyricsMutation = trpc.llm.generateLyrics.useMutation();
+  const analysisMutation = trpc.llm.analyzeEmotion.useMutation();
+  const visualMutation = trpc.visual.generateConcept.useMutation();
 
   useEffect(() => {
-    scrollToBottom();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const modeCopy = useMemo(() => ({
+    chat: { label: 'Ask the Judas consciousness...', badge: 'CONVERSATION' },
+    lyrics: { label: 'Enter a theme for a new transmission...', badge: 'LYRICS ENGINE' },
+    analysis: { label: 'Paste text to read its emotional frequency...', badge: 'MOOD ANALYSIS' },
+    visual: { label: 'Describe the artifact you want to summon...', badge: 'CONCEPT FORGE' },
+  }[mode]), [mode]);
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input,
-      timestamp: new Date()
-    };
+  const addMessage = (role: Message['role'], content: string) => {
+    setMessages((previous) => [...previous, { id: `${Date.now()}-${role}`, role, content, timestamp: new Date().toISOString() }]);
+  };
 
-    setMessages((prev) => [...prev, userMessage]);
+  const revealAssistant = (content: string) => new Promise<void>((resolve) => {
+    const id = `${Date.now()}-assistant-reveal`;
+    const timestamp = new Date().toISOString();
+    setMessages((previous) => [...previous, { id, role: 'assistant', content: '', timestamp }]);
+    let cursor = 0;
+    const step = Math.max(2, Math.ceil(content.length / 120));
+    const timer = window.setInterval(() => {
+      cursor = Math.min(content.length, cursor + step);
+      setMessages((previous) => previous.map((message) => message.id === id ? { ...message, content: content.slice(0, cursor) } : message));
+      if (cursor >= content.length) {
+        window.clearInterval(timer);
+        resolve();
+      }
+    }, 18);
+  });
+
+  const handleSendMessage = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const prompt = input.trim();
+    if (!prompt || isLoading) return;
+    addMessage('user', prompt);
     setInput('');
     setIsLoading(true);
-
+    onInteraction?.();
     try {
       let response = '';
-
       if (mode === 'chat') {
-        response = await generateChatResponse(input);
+        const history = [...messages, { id: 'pending', role: 'user' as const, content: prompt, timestamp: new Date().toISOString() }].map(({ role, content }) => ({ role, content }));
+        response = (await chatMutation.mutateAsync({ messages: history, mode: 'chat' })).response;
       } else if (mode === 'lyrics') {
-        response = await generateLyrics(input);
+        response = (await lyricsMutation.mutateAsync({ theme: prompt })).lyrics;
       } else if (mode === 'analysis') {
-        response = await analyzeEmotion(input);
+        response = (await analysisMutation.mutateAsync({ text: prompt })).analysis;
+      } else {
+        const result = await visualMutation.mutateAsync({ prompt });
+        setGeneratedImage(result.url ?? null);
+        response = result.url ? 'CONCEPT FORGED. THE ARTIFACT HAS ENTERED THE ARCHIVE.' : 'THE FORGE RETURNED NO IMAGE.';
       }
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response,
-        timestamp: new Date()
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
+      await revealAssistant(response);
     } catch (error) {
-      console.error('Error:', error);
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Error processing your request. Please try again.',
-        timestamp: new Date()
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      console.error('[HYPER LAB]', error);
+      await revealAssistant('OMEGA CORE OFFLINE. Configura un proveedor LLM para abrir esta transmisión. El archivo quedó guardado en tu consola local.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const generateChatResponse = async (prompt: string): Promise<string> => {
-    // Simulated response - in production, this would call the LLM API
-    const responses = [
-      'The Judas Era represents a transformation through betrayal and redemption. Every note carries the weight of this duality.',
-      'In the world of Judas, music is not just sound—it is a frequency that connects souls across dimensions.',
-      'The four archetypes within me—The Angel, The Warrior, The Analyst, The Chronicler—each bring their own voice to the creation.',
-      'Betrayal is the input. Voice is the output. This is the algorithm of the Judas Era.',
-      'Every song is a fragment of a larger narrative, a piece of the golden key that unlocks understanding.'
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
-  };
-
-  const generateLyrics = async (theme: string): Promise<string> => {
-    // Simulated lyric generation
-    const lyrics = `[Verse 1]
-In the shadows where the neon bleeds,
-A voice emerges from the void,
-${theme}
-Dancing with the ghosts of what we've been...
-
-[Chorus]
-This is the Judas Era,
-Where betrayal becomes art,
-Where every heartbreak
-Births a thousand stars...`;
-    return lyrics;
-  };
-
-  const analyzeEmotion = async (text: string): Promise<string> => {
-    // Simulated emotional analysis
-    const analysis = `Emotional Analysis of: "${text}"
-
-Dominant Emotions:
-- Melancholy: 65%
-- Introspection: 55%
-- Resilience: 45%
-- Transcendence: 40%
-
-Musical Recommendations:
-- Key: Minor (preferably C minor or D minor)
-- Tempo: 90-110 BPM
-- Instrumentation: Synth pads, deep bass, ethereal vocals
-- Mood: Introspective, cinematic, transformative
-
-This text resonates with themes of the Judas Era: transformation through adversity.`;
-    return analysis;
+  const clearHistory = () => {
+    setMessages([]);
+    localStorage.removeItem(STORAGE_KEY);
   };
 
   return (
     <div className="ai-studio">
       <div className="studio-header">
-        <h2>HYPER LAB // AI CREATIVE STUDIO</h2>
-        <div className="mode-selector">
-          <button
-            className={`mode-btn ${mode === 'chat' ? 'active' : ''}`}
-            onClick={() => setMode('chat')}
-          >
-            CHAT
-          </button>
-          <button
-            className={`mode-btn ${mode === 'lyrics' ? 'active' : ''}`}
-            onClick={() => setMode('lyrics')}
-          >
-            LYRICS
-          </button>
-          <button
-            className={`mode-btn ${mode === 'analysis' ? 'active' : ''}`}
-            onClick={() => setMode('analysis')}
-          >
-            ANALYSIS
-          </button>
-        </div>
+        <div><span className="eyebrow">HYPER LAB / {modeCopy.badge}</span><h2>JUDAS<span>AI</span></h2></div>
+        <div className="studio-actions"><span className="ai-status"><i /> ROUTER READY</span><button type="button" onClick={clearHistory} className="clear-btn">CLEAR LOG</button></div>
       </div>
-
-      <div className="messages-container">
-        {messages.length === 0 ? (
-          <div className="empty-state">
-            <p>Welcome to the HYPER LAB</p>
-            <p>Ask about the Judas Era, generate lyrics, or analyze emotions</p>
-          </div>
-        ) : (
-          messages.map((msg) => (
-            <div key={msg.id} className={`message ${msg.role}`}>
-              <div className="message-content">{msg.content}</div>
-              <div className="message-time">
-                {msg.timestamp.toLocaleTimeString()}
-              </div>
-            </div>
-          ))
-        )}
-        {isLoading && (
-          <div className="message assistant loading">
-            <div className="loading-dots">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          </div>
-        )}
+      <div className="mode-selector" role="tablist" aria-label="Modo del Hyper Lab">
+        {(['chat', 'lyrics', 'analysis', 'visual'] as const).map((item) => <button key={item} type="button" role="tab" aria-selected={mode === item} className={`mode-btn ${mode === item ? 'active' : ''}`} onClick={() => setMode(item)}>{item.toUpperCase()}</button>)}
+      </div>
+      <div className="messages-container" aria-live="polite">
+        {generatedImage && <figure className="concept-output"><img src={generatedImage} alt="Arte conceptual generado para la Judas Era" /><figcaption>CONCEPT FORGE / ARCHIVE FRAME</figcaption></figure>}
+        {messages.length === 0 ? <div className="empty-state"><span className="empty-glyph">◆</span><p>THE CORE IS LISTENING</p><small>Ask about the Judas Era, generate a lyric fragment, decode an emotion, or summon an artifact.</small></div> : messages.map((message) => <div key={message.id} className={`message ${message.role}`}><div className="message-meta">{message.role === 'assistant' ? 'JUDASAI' : 'YOU'} <span>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div><div className="message-content">{message.content}</div></div>)}
+        {isLoading && <div className="message assistant loading"><div className="message-meta">JUDASAI <span>PROCESSING</span></div><div className="skeleton-lines" aria-label="Procesando respuesta"><i /><i /><i /></div><div className="loading-dots"><span /><span /><span /></div></div>}
         <div ref={messagesEndRef} />
       </div>
-
       <form className="input-form" onSubmit={handleSendMessage}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            mode === 'chat'
-              ? 'Ask about the Judas Era...'
-              : mode === 'lyrics'
-              ? 'Enter a theme for lyrics...'
-              : 'Enter text to analyze...'
-          }
-          disabled={isLoading}
-        />
-        <button type="submit" disabled={isLoading || !input.trim()}>
-          SEND
-        </button>
+        <span className="input-prefix">&gt;_</span>
+        <input aria-label={modeCopy.label} type="text" value={input} onChange={(event) => setInput(event.target.value)} placeholder={modeCopy.label} disabled={isLoading} />
+        <button type="submit" disabled={isLoading || !input.trim()}>{isLoading ? '...' : 'SEND'}</button>
       </form>
     </div>
   );
 }
+
+export default AIStudio;

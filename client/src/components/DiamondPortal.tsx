@@ -9,237 +9,215 @@ interface Diamond {
   desc: string;
 }
 
-export function DiamondPortal() {
+interface DiamondPortalProps {
+  onInteraction?: () => void;
+  onComplete?: () => void;
+}
+
+const DIAMONDS: Diamond[] = [
+  { name: 'RUBY', color: 0xe0115f, note: 'C4', desc: 'EL ANCLA' },
+  { name: 'SAPPHIRE', color: 0x0f52ba, note: 'E4', desc: 'EL CRONISTA' },
+  { name: 'PURE LIGHT', color: 0xffffff, note: 'G4', desc: 'LA TRANSCENDENCIA' },
+  { name: 'GOLD', color: 0xffd700, note: 'B4', desc: 'EL GUERRERO' },
+  { name: 'EMERALD', color: 0x50c878, note: 'D5', desc: 'LA INTERFAZ' },
+];
+
+interface Shockwave {
+  mesh: THREE.Mesh;
+  material: THREE.MeshBasicMaterial;
+  age: number;
+}
+
+export function DiamondPortal({ onInteraction, onComplete }: DiamondPortalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [activeDiamonds, setActiveDiamonds] = useState<Set<number>>(new Set());
-  const synth = useRef<Tone.PolySynth | null>(null);
-  const reverb = useRef<Tone.Reverb | null>(null);
-
-  const diamondsData: Diamond[] = [
-    { name: 'RUBY', color: 0xe0115f, note: 'C4', desc: 'El Ancla' },
-    { name: 'SAPPHIRE', color: 0x0f52ba, note: 'E4', desc: 'El Cronista' },
-    { name: 'PURE LIGHT', color: 0xffffff, note: 'G4', desc: 'La Transcendencia' },
-    { name: 'GOLD', color: 0xffd700, note: 'B4', desc: 'El Guerrero' },
-    { name: 'EMERALD', color: 0x50c878, note: 'D5', desc: 'La Interfaz' }
-  ];
+  const synthRef = useRef<Tone.PolySynth | null>(null);
+  const reverbRef = useRef<Tone.Reverb | null>(null);
+  const activeSetRef = useRef<Set<number>>(new Set());
+  const onInteractionRef = useRef(onInteraction);
+  const onCompleteRef = useRef(onComplete);
+  onInteractionRef.current = onInteraction;
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
-    if (!canvasRef.current) return;
-
-    // Initialize scene
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, canvasRef.current.clientWidth / canvasRef.current.clientHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
-    renderer.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
+    const width = canvas.clientWidth || 900;
+    const height = canvas.clientHeight || 520;
+    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setSize(width, height, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
 
-    // Lighting
-    scene.add(new THREE.AmbientLight(0x202020, 0.2));
-    const keyLight = new THREE.PointLight(0xff003c, 3, 100);
-    keyLight.position.set(5, 5, 5);
+    scene.add(new THREE.AmbientLight(0x222222, 0.25));
+    const keyLight = new THREE.PointLight(0xff003c, 3.5, 100);
+    keyLight.position.set(4, 4, 6);
     scene.add(keyLight);
-
-    const fillLight = new THREE.PointLight(0x00ffff, 2, 100);
+    const fillLight = new THREE.PointLight(0x00ffff, 1.2, 80);
     fillLight.position.set(-5, 3, 3);
     scene.add(fillLight);
+    const goldLight = new THREE.PointLight(0xffd700, 1.4, 80);
+    goldLight.position.set(0, -4, -4);
+    scene.add(goldLight);
 
-    const backLight = new THREE.PointLight(0xffd700, 1.5, 100);
-    backLight.position.set(0, -5, -5);
-    scene.add(backLight);
+    const positions: [number, number, number][] = [[-5, 0, 0], [-2.5, 1.5, -1], [0, -0.5, 1], [2.5, 1, -0.5], [5, -0.5, 0]];
+    const diamonds: THREE.Group[] = [];
+    const shocks: Shockwave[] = [];
 
-    // Create diamonds
-    const diamondMeshes: THREE.Group[] = [];
-    const positions = [[-5, 0, 0], [-2.5, 1.5, -1], [0, -0.5, 1], [2.5, 1, -0.5], [5, -0.5, 0]];
-
-    diamondsData.forEach((diamond, i) => {
-      const mat = new THREE.MeshPhysicalMaterial({
+    DIAMONDS.forEach((diamond, index) => {
+      const geometry = new THREE.OctahedronGeometry(1.2, 0);
+      geometry.scale(1, 1.8, 1);
+      const material = new THREE.MeshPhysicalMaterial({
         color: diamond.color,
         metalness: 0.1,
-        roughness: 0.0,
-        transmission: 0.9,
-        thickness: 1.5,
-        ior: 2.42,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.0,
+        roughness: 0.04,
+        transmission: 0.72,
+        thickness: 1.2,
+        ior: 2.2,
+        clearcoat: 1,
         emissive: diamond.color,
-        emissiveIntensity: 0.2,
+        emissiveIntensity: 0.18,
         transparent: true,
-        opacity: 0.95
+        opacity: 0.94,
       });
-
-      const geo = new THREE.OctahedronGeometry(1.2, 0);
-      geo.scale(1, 1.8, 1);
-
       const group = new THREE.Group();
-      const mesh = new THREE.Mesh(geo, mat);
-      group.add(mesh);
-
-      // Wireframe
-      const wireGeo = new THREE.EdgesGeometry(geo);
-      const wireMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
-      group.add(new THREE.LineSegments(wireGeo, wireMat));
-
-      // Glow
-      const glowGeo = new THREE.SphereGeometry(0.4, 16, 16);
-      const glowMat = new THREE.MeshBasicMaterial({ color: diamond.color, transparent: true, opacity: 0.6 });
-      group.add(new THREE.Mesh(glowGeo, glowMat));
-
-      group.position.set(...(positions[i] as [number, number, number]));
-      group.scale.set(0.8, 0.8, 0.8);
-      group.userData = { index: i, active: false };
-
+      group.position.set(...positions[index]);
+      group.scale.setScalar(0.82);
+      group.userData = { index, active: false, baseY: positions[index][1], velocity: 0, hover: 0, pulse: 0 };
+      group.add(new THREE.Mesh(geometry, material));
+      const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28 }));
+      group.add(wire);
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 16), new THREE.MeshBasicMaterial({ color: diamond.color, transparent: true, opacity: 0.55 }));
+      group.add(glow);
       scene.add(group);
-      diamondMeshes.push(group);
+      diamonds.push(group);
     });
 
     camera.position.set(0, 0, 10);
-
-    // Raycasting for interaction
     const raycaster = new THREE.Raycaster();
-    const mouseVec = new THREE.Vector2();
-    let hoveredDiamond: number | null = null;
+    const mouse = new THREE.Vector2();
+    let hovered = -1;
+    let frameId = 0;
 
-    canvasRef.current.addEventListener('mousemove', (e) => {
-      const rect = canvasRef.current!.getBoundingClientRect();
-      mouseVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouseVec, camera);
-      const intersects = raycaster.intersectObjects(diamondMeshes, true);
-
-      hoveredDiamond = null;
-      diamondMeshes.forEach((mesh) => {
-        mesh.children[0].scale.set(1, 1, 1);
-      });
-
-      if (intersects.length > 0) {
-        let parent = intersects[0].object.parent;
-        while (parent && !diamondMeshes.includes(parent as THREE.Group)) {
-          parent = parent.parent;
-        }
-        if (parent && diamondMeshes.includes(parent as THREE.Group)) {
-          hoveredDiamond = (parent as any).userData.index;
-          (parent as any).children[0].scale.set(1.2, 1.2, 1.2);
-        }
+    const initAudio = async () => {
+      await Tone.start();
+      if (!synthRef.current) {
+        reverbRef.current = new Tone.Reverb({ decay: 4, wet: 0.35 }).toDestination();
+        synthRef.current = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth' }, envelope: { attack: 0.02, decay: 0.24, sustain: 0.35, release: 2.8 } }).connect(reverbRef.current);
+        synthRef.current.volume.value = -12;
       }
-    });
+    };
 
-    canvasRef.current.addEventListener('click', async () => {
-      if (hoveredDiamond !== null) {
-        await activateDiamond(hoveredDiamond);
-      }
-    });
-
-    // Initialize audio
-    async function initAudio() {
-      if (!synth.current) {
-        await Tone.start();
-        reverb.current = new Tone.Reverb({ decay: 5, wet: 0.4 }).toDestination();
-        synth.current = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: 'fatsawtooth', count: 3, spread: 30 },
-          envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 4 }
-        }).connect(reverb.current);
-        synth.current.volume.value = -10;
-      }
-    }
-
-    async function activateDiamond(index: number) {
-      const mesh = diamondMeshes[index];
-      if (mesh.userData.active) return;
-
-      mesh.userData.active = true;
-      setActiveDiamonds((prev) => new Set(Array.from(prev).concat([index])));
-
+    const activate = async (index: number) => {
+      const group = diamonds[index];
+      if (!group || group.userData.active) return;
+      group.userData.active = true;
+      group.userData.pulse = 1;
+      const next = new Set(activeSetRef.current);
+      next.add(index);
+      activeSetRef.current = next;
+      setActiveDiamonds(next);
+      onInteractionRef.current?.();
+      if (next.size === DIAMONDS.length) onCompleteRef.current?.();
       await initAudio();
-      if (synth.current) {
-        synth.current.triggerAttackRelease(diamondsData[index].note, '2n');
-      }
-
-      keyLight.color.setHex(diamondsData[index].color);
-
-      // Shock wave
-      const shockGeo = new THREE.RingGeometry(1, 1.2, 32);
-      const shockMat = new THREE.MeshBasicMaterial({
-        color: diamondsData[index].color,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.8
-      });
-      const shock = new THREE.Mesh(shockGeo, shockMat);
-      shock.position.copy(mesh.position);
+      synthRef.current?.triggerAttackRelease(DIAMONDS[index].note, '2n');
+      keyLight.color.setHex(DIAMONDS[index].color);
+      const material = new THREE.MeshBasicMaterial({ color: DIAMONDS[index].color, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+      const shock = new THREE.Mesh(new THREE.RingGeometry(1, 1.12, 40), material);
+      shock.position.copy(group.position);
+      shock.rotation.x = Math.PI / 2;
       scene.add(shock);
+      shocks.push({ mesh: shock, material, age: 0 });
+    };
 
-      // Animation
-      let startTime = Date.now();
-      const animateShock = () => {
-        const elapsed = (Date.now() - startTime) / 1000;
-        const progress = Math.min(elapsed / 1, 1);
-        shock.scale.set(1 + progress * 4, 1 + progress * 4, 1);
-        shockMat.opacity = 0.8 * (1 - progress);
-        if (progress < 1) {
-          requestAnimationFrame(animateShock);
-        } else {
-          scene.remove(shock);
+    const handlePointerMove = (event: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hit = raycaster.intersectObjects(diamonds, true)[0];
+      hovered = -1;
+      diamonds.forEach((group) => { group.userData.hover = 0; });
+      if (hit) {
+        let parent: THREE.Object3D | null = hit.object;
+        while (parent && !diamonds.includes(parent as THREE.Group)) parent = parent.parent;
+        if (parent && diamonds.includes(parent as THREE.Group)) {
+          hovered = (parent as THREE.Group).userData.index;
+          (parent as THREE.Group).userData.hover = 1;
         }
-      };
-      animateShock();
+      }
+      canvas.style.cursor = hovered >= 0 ? 'pointer' : 'crosshair';
+    };
+    const handleClick = () => { if (hovered >= 0) void activate(hovered); };
+    const handleResize = () => {
+      const nextWidth = canvas.clientWidth || 900;
+      const nextHeight = canvas.clientHeight || 520;
+      camera.aspect = nextWidth / nextHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(nextWidth, nextHeight, false);
+    };
 
-      // Pulse
-      let pulseTime = Date.now();
-      const animatePulse = () => {
-        const elapsed = (Date.now() - pulseTime) / 1000;
-        const progress = Math.min(elapsed / 0.3, 1);
-        const scale = 0.8 + Math.sin(progress * Math.PI) * 0.5;
-        mesh.scale.set(scale, scale, scale);
-        if (progress < 1) {
-          requestAnimationFrame(animatePulse);
-        } else {
-          mesh.scale.set(0.8, 0.8, 0.8);
-        }
-      };
-      animatePulse();
-    }
+    canvas.addEventListener('mousemove', handlePointerMove);
+    canvas.addEventListener('click', handleClick);
+    window.addEventListener('resize', handleResize);
 
-    // Animation loop
     const clock = new THREE.Clock();
     const animate = () => {
-      const elapsedTime = clock.getElapsedTime();
-
-      diamondMeshes.forEach((mesh, i) => {
-        mesh.rotation.y = elapsedTime * 0.5;
-        mesh.rotation.x = Math.sin(elapsedTime * 0.3) * 0.3;
-        mesh.position.y += Math.sin(elapsedTime * 2 + i) * 0.001;
+      const time = clock.getElapsedTime();
+      diamonds.forEach((group, index) => {
+        const data = group.userData;
+        data.velocity += Math.sin(time * 1.35 + index * 0.85) * 0.002;
+        data.velocity *= 0.96;
+        group.position.y += data.velocity;
+        group.position.y += (data.baseY + Math.sin(time * 1.5 + index) * 0.18 - group.position.y) * 0.045;
+        group.rotation.y = time * (0.28 + index * 0.025);
+        group.rotation.x = Math.sin(time * 0.45 + index) * 0.18;
+        const targetScale = 0.82 + data.hover * 0.16 + data.pulse * 0.18;
+        const nextScale = THREE.MathUtils.lerp(group.scale.x, targetScale, 0.16);
+        group.scale.setScalar(nextScale);
+        data.pulse *= 0.92;
       });
-
+      shocks.forEach((shock) => {
+        shock.age += 0.016;
+        const progress = Math.min(shock.age / 1.1, 1);
+        shock.mesh.scale.setScalar(1 + progress * 4.5);
+        shock.material.opacity = 0.85 * (1 - progress);
+      });
+      while (shocks.length && shocks[0].age >= 1.1) {
+        const expired = shocks.shift();
+        if (expired) { scene.remove(expired.mesh); expired.mesh.geometry.dispose(); expired.material.dispose(); }
+      }
       renderer.render(scene, camera);
-      requestAnimationFrame(animate);
+      frameId = requestAnimationFrame(animate);
     };
     animate();
 
-    const handleResize = () => {
-      if (!canvasRef.current) return;
-      const width = canvasRef.current.clientWidth;
-      const height = canvasRef.current.clientHeight;
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-    };
-
-    window.addEventListener('resize', handleResize);
-
     return () => {
+      canvas.removeEventListener('mousemove', handlePointerMove);
+      canvas.removeEventListener('click', handleClick);
       window.removeEventListener('resize', handleResize);
+      window.cancelAnimationFrame(frameId);
+      diamonds.forEach((group) => group.traverse((object) => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
+          object.geometry.dispose();
+          if (Array.isArray(object.material)) object.material.forEach((mat) => mat.dispose());
+          else object.material.dispose();
+        }
+      }));
+      renderer.dispose();
     };
   }, []);
 
   return (
     <div className="diamond-portal">
-      <canvas ref={canvasRef} className="diamonds-canvas"></canvas>
-      <div className="diamond-info">
-        <p>Click on the diamonds to unlock fragments of the Judas Era.</p>
-        <p>Unlocked: {Array.from(activeDiamonds).length} / 5</p>
-      </div>
+      <div className="portal-meta"><span>FRAGMENT ARRAY / {activeDiamonds.size.toString().padStart(2, '0')} OF 05 ONLINE</span><span>CLICK TO AWAKEN</span></div>
+      <canvas ref={canvasRef} className="diamonds-canvas" aria-label="Portal 3D de cinco fragmentos interactivos"></canvas>
+      <div className="diamond-info"><p>Five frequencies hold the missing architecture of the Judas Era.</p><p className="unlock-counter">{activeDiamonds.size === DIAMONDS.length ? '◆ ALL FRAGMENTS SYNCHRONIZED' : `UNLOCKED ${activeDiamonds.size} / ${DIAMONDS.length}`}</p></div>
+      <div className="fragment-legend">{DIAMONDS.map((diamond, index) => <span key={diamond.name} className={activeDiamonds.has(index) ? 'active' : ''}><i style={{ backgroundColor: `#${diamond.color.toString(16).padStart(6, '0')}` }} />{diamond.name}<small>{diamond.desc}</small></span>)}</div>
     </div>
   );
 }
+
+export default DiamondPortal;

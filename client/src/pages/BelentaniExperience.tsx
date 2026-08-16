@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
+import { FormEvent } from 'react';
+import { trpc } from '../lib/trpc';
+
 import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -11,7 +15,7 @@ import { AIStudio } from '../components/AIStudio';
 import { MusicStudio } from '../components/MusicStudio';
 import '../styles/belentani.css';
 
-gsap.registerPlugin(ScrollTrigger);
+gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
 
 export default function BelentaniExperience() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -19,6 +23,45 @@ export default function BelentaniExperience() {
   const [bootComplete, setBootComplete] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
   const [unlockedChallenges, setUnlockedChallenges] = useState<Set<string>>(new Set());
+  const [clockLabel, setClockLabel] = useState('00:00:00');
+  const [contactStatus, setContactStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [selectedArtwork, setSelectedArtwork] = useState<string | null>(null);
+  const [quizSolved, setQuizSolved] = useState(false);
+  const [cursorLabel, setCursorLabel] = useState('');
+  const cursorDotRef = useRef<HTMLDivElement>(null);
+  const cursorRingRef = useRef<HTMLDivElement>(null);
+
+  const completeChallenge = (id: string) => {
+    setUnlockedChallenges((previous) => {
+      const next = new Set(previous);
+      next.add(id);
+      return next;
+    });
+  };
+
+  const handleContactSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const name = String(formData.get('name') ?? '').trim();
+    const email = String(formData.get('email') ?? '').trim();
+    const message = String(formData.get('message') ?? '').trim();
+    setContactStatus('sending');
+    try {
+      const subject = encodeURIComponent(`BELENTANI // Judas Era signal from ${name}`);
+      const body = encodeURIComponent(`Name: ${name}\nEmail: ${email}\n\n${message}`);
+      const mailto = `mailto:hello@belentani.com?subject=${subject}&body=${body}`;
+      const handoff = document.createElement('a');
+      handoff.href = mailto;
+      handoff.click();
+      form.reset();
+      completeChallenge('contact');
+      setContactStatus('sent');
+    } catch (error) {
+      console.error('[CONTACT]', error);
+      setContactStatus('error');
+    }
+  };
 
   // Boot sequence
   useEffect(() => {
@@ -204,7 +247,8 @@ export default function BelentaniExperience() {
         arcs.add(new THREE.Line(geo, arcMat));
       }
     }
-    setInterval(generateArcs, 100);
+    generateArcs();
+    const arcInterval = window.setInterval(generateArcs, 140);
 
     // Ring
     const ringGeo = new THREE.RingGeometry(18, 30, 128, 1);
@@ -267,14 +311,16 @@ export default function BelentaniExperience() {
     camera.position.z = 45;
 
     let targetMouseX = 0, targetMouseY = 0;
-    window.addEventListener('mousemove', (e) => {
+    const handlePointerMove = (e: MouseEvent) => {
       targetMouseX = (e.clientX / window.innerWidth) * 2 - 1;
       targetMouseY = -(e.clientY / window.innerHeight) * 2 + 1;
-    });
+    };
+    window.addEventListener('mousemove', handlePointerMove);
 
     const clock = new THREE.Clock();
     let scrollProgress = 0;
 
+    let frameId = 0;
     function animate() {
       const elapsedTime = clock.getElapsedTime();
       coreMat.uniforms.uTime.value = elapsedTime;
@@ -291,7 +337,7 @@ export default function BelentaniExperience() {
       stars.rotation.y = elapsedTime * 0.005;
 
       composer.render();
-      requestAnimationFrame(animate);
+      frameId = requestAnimationFrame(animate);
     }
     animate();
 
@@ -305,41 +351,107 @@ export default function BelentaniExperience() {
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      window.removeEventListener('mousemove', () => {});
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.clearInterval(arcInterval);
+      window.cancelAnimationFrame(frameId);
+      coreGeo.dispose();
+      coreMat.dispose();
+      ringGeo.dispose();
+      ringMat.dispose();
+      starsGeo.dispose();
+      starsMat.dispose();
+      arcMat.dispose();
+      renderer.dispose();
+      composer.dispose();
     };
   }, [bootComplete]);
 
-  // GSAP animations
+  // GSAP animations, smooth navigation and chapter parallax
   useEffect(() => {
     if (!bootComplete) return;
 
-    const tl = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.5 });
-    tl.to('#preTitle', { opacity: 1, y: 0, duration: 1 })
-      .to('#heroTitle', { opacity: 1, y: 0, duration: 1.5 }, '-=0.5')
-      .to('#subtitle', { opacity: 1, y: 0, duration: 1 }, '-=0.8')
-      .to('#ctaBtn', { opacity: 1, y: 0, duration: 0.8 }, '-=0.6');
-
     const sections = ['home', 'artist', 'music', 'judas', 'portal', 'gallery', 'contact', 'studio'];
     const secNames = ['01 // GENESIS', '02 // THE ARTIST', '03 // MUSIC', '04 // JUDAS ERA', '05 // THE FRAGMENTS', '06 // ART GALLERY', '07 // CONTACT', '08 // HYPER LAB'];
+    const context = gsap.context(() => {
+      const intro = gsap.timeline({ defaults: { ease: 'power3.out' }, delay: 0.35 });
+      intro.to('#preTitle', { opacity: 1, y: 0, duration: 0.8 })
+        .to('#heroTitle', { opacity: 1, y: 0, duration: 1.25 }, '-=0.35')
+        .to('#subtitle', { opacity: 1, y: 0, duration: 0.75 }, '-=0.45')
+        .to('#ctaBtn', { opacity: 1, y: 0, duration: 0.6 }, '-=0.3');
 
-    sections.forEach((sec, i) => {
-      ScrollTrigger.create({
-        trigger: `#${sec}`,
-        start: 'top center',
-        end: 'bottom center',
-        onToggle: (self) => {
-          if (self.isActive) {
-            setActiveSection(i);
-            const sectionName = document.getElementById('sectionName');
-            if (sectionName) sectionName.innerHTML = secNames[i];
-            document.querySelectorAll('.nav-dot').forEach(d => d.classList.remove('active'));
-            const dot = document.getElementById(`dot-${sec}`);
-            if (dot) dot.classList.add('active');
-          }
-        }
+      gsap.utils.toArray<HTMLElement>('.section').forEach((section) => {
+        const title = section.querySelector('.section-title');
+        const subtitle = section.querySelector('.section-subtitle');
+        if (title) gsap.fromTo(title, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.9, ease: 'power3.out', scrollTrigger: { trigger: section, start: 'top 78%' } });
+        if (subtitle) gsap.fromTo(subtitle, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.65, delay: 0.08, ease: 'power3.out', scrollTrigger: { trigger: section, start: 'top 76%' } });
+        const revealNodes = section.querySelectorAll<HTMLElement>('[data-reveal]');
+        if (revealNodes.length) gsap.fromTo(revealNodes, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.7, stagger: 0.08, ease: 'power3.out', scrollTrigger: { trigger: section, start: 'top 72%' } });
+        const parallaxNode = section.querySelector<HTMLElement>('[data-parallax]');
+        if (parallaxNode) gsap.to(parallaxNode, { yPercent: -10, ease: 'none', scrollTrigger: { trigger: section, scrub: true, start: 'top bottom', end: 'bottom top' } });
       });
-    });
+
+      sections.forEach((sec, i) => {
+        ScrollTrigger.create({
+          trigger: `#${sec}`,
+          start: 'top center',
+          end: 'bottom center',
+          onToggle: (self) => {
+            if (self.isActive) {
+              setActiveSection(i);
+              const sectionName = document.getElementById('sectionName');
+              if (sectionName) sectionName.textContent = secNames[i];
+              document.querySelectorAll('.nav-dot').forEach((d) => d.classList.remove('active'));
+              document.getElementById(`dot-${sec}`)?.classList.add('active');
+            }
+          }
+        });
+      });
+    }, containerRef);
+
+    ScrollTrigger.refresh();
+    return () => context.revert();
   }, [bootComplete]);
+
+  useEffect(() => {
+    const updateClock = () => setClockLabel(new Date().toLocaleTimeString('en-GB', { hour12: false }));
+    updateClock();
+    const timer = window.setInterval(updateClock, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const dot = cursorDotRef.current;
+    const ring = cursorRingRef.current;
+    if (!dot || !ring || window.matchMedia('(pointer: coarse)').matches) return;
+    let targetX = window.innerWidth / 2;
+    let targetY = window.innerHeight / 2;
+    let ringX = targetX;
+    let ringY = targetY;
+    let frame = 0;
+    const move = (event: MouseEvent) => {
+      targetX = event.clientX;
+      targetY = event.clientY;
+      dot.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+    };
+    const render = () => {
+      ringX += (targetX - ringX) * 0.16;
+      ringY += (targetY - ringY) * 0.16;
+      ring.style.transform = `translate3d(${ringX}px, ${ringY}px, 0)`;
+      frame = requestAnimationFrame(render);
+    };
+    window.addEventListener('mousemove', move);
+    frame = requestAnimationFrame(render);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  const jumpToSection = (id: string) => {
+    gsap.to(window, { duration: 1.1, scrollTo: { y: `#${id}`, offsetY: 0 }, ease: 'power3.inOut' });
+  };
+
+  const hasGoldenKey = unlockedChallenges.size >= 4;
 
   return (
     <div ref={containerRef} className="belentani-container">
@@ -352,9 +464,13 @@ export default function BelentaniExperience() {
       {/* Canvas for Three.js */}
       <canvas ref={canvasRef} className="webgl-canvas"></canvas>
 
-      {/* Vignette & Grain */}
+      {/* Atmosphere overlays */}
       <div className="vignette"></div>
       <div className="grain"></div>
+      <div className="scanlines" aria-hidden="true"></div>
+      <div ref={cursorDotRef} className="cursor-dot" aria-hidden="true"></div>
+      <div ref={cursorRingRef} className="cursor-outline" aria-hidden="true"></div>
+      <div className="cursor-cross" aria-hidden="true"></div>
 
       {/* HUD Layer */}
       <div className="hud-layer">
@@ -367,14 +483,14 @@ export default function BelentaniExperience() {
           </div>
         </div>
         <div className="hud-bottom">
-          <div className="hud-element">
-            <div>LAT: 41.3851°N</div>
-            <div>LON: 2.1734°E</div>
-            <div>FREQ: 430.08 Hz</div>
+          <div className="hud-element hud-readout">
+            <div><span className="status-pulse"></span> OMEGA CORE / ONLINE</div>
+            <div>LAT: 41.3851°N&nbsp;&nbsp; LON: 2.1734°E</div>
+            <div>FREQ: 430.08 Hz&nbsp;&nbsp; UTC <span>{clockLabel}</span></div>
           </div>
           <div className="nav-dots">
             {['home', 'artist', 'music', 'judas', 'portal', 'gallery', 'contact', 'studio'].map((sec, i) => (
-              <div key={sec} id={`dot-${sec}`} className={`nav-dot ${i === 0 ? 'active' : ''}`}></div>
+              <button key={sec} type="button" id={`dot-${sec}`} aria-label={`Ir a ${sec}`} className={`nav-dot ${i === 0 ? 'active' : ''}`} onClick={() => jumpToSection(sec)}></button>
             ))}
           </div>
         </div>
@@ -384,7 +500,7 @@ export default function BelentaniExperience() {
       <div className="content-wrapper">
         {/* GENESIS - Hero */}
         <section id="home" className="section hero-section">
-          <div className="hero-content">
+          <div className="hero-content" data-parallax>
             <div id="preTitle" className="hero-pre-title">
               ◆ VERIFIED GLOBAL ARTIST • ENTITY ACTIVE
             </div>
@@ -395,7 +511,7 @@ export default function BelentaniExperience() {
               ▶ A NEW SOUND IS COMING.<br />
               WELCOME TO THE WORLD OF JUDAS.
             </p>
-            <button id="ctaBtn" className="cta-btn">ENTER THE EXPERIENCE</button>
+            <button id="ctaBtn" className="cta-btn" onClick={() => jumpToSection('artist')}>ENTER THE EXPERIENCE</button>
           </div>
         </section>
 
@@ -404,16 +520,17 @@ export default function BelentaniExperience() {
           <h2 className="section-title">THE <span>ARTIST</span></h2>
           <div className="section-subtitle">◆ BIOGRAPHY ◆</div>
           <div className="artist-content">
-            <p>
+            <p data-reveal>
               Belentani is a recording artist and songwriter born in São Paulo, Brazil, and raised in the vibrant city of Barcelona, Spain. 
               He began singing classes at sixteen and released his first EDM single with Mark Nerom at twenty-one.
             </p>
-            <p>
+            <p data-reveal>
               With a deep interest in harmony, Belentani blends cultural influences into his music, rooted in R&B, pop, and electronic music. 
               His sound combines emotional melodies with contagious beats, leaving a lasting impression.
             </p>
+            <div className="artist-portraits" data-parallax><figure><img src="/manus-storage/about_1_7e5a39e8.png" alt="Belentani en la era Judas" /><figcaption>THE WITNESS</figcaption></figure><figure><img src="/manus-storage/about_2_907e9bb3.png" alt="Retrato de Belentani" /><figcaption>THE ARCHIVE</figcaption></figure></div>
             <div className="social-links">
-              <a href="https://open.spotify.com/intl-es/artist/2bU5Ir70YHHuUnq2f3WCYl" target="_blank" rel="noopener noreferrer" className="social-link">
+              <a data-reveal href="https://open.spotify.com/intl-es/artist/2bU5Ir70YHHuUnq2f3WCYl" target="_blank" rel="noopener noreferrer" className="social-link" onClick={() => completeChallenge('artist')}>
                 SPOTIFY
               </a>
               <a href="https://music.apple.com/es/artist/belentani/1522171354" target="_blank" rel="noopener noreferrer" className="social-link">
@@ -439,7 +556,7 @@ export default function BelentaniExperience() {
         <section id="music" className="section">
           <h2 className="section-title">MUSIC</h2>
           <div className="section-subtitle">◆ SONIC ARCHIVE ◆</div>
-          <MusicStudio />
+          <div data-reveal><MusicStudio onListeningComplete={() => completeChallenge('music')} /></div>
         </section>
 
         {/* JUDAS ERA */}
@@ -447,16 +564,44 @@ export default function BelentaniExperience() {
           <h2 className="section-title">JUDAS <span>ERA</span></h2>
           <div className="section-subtitle">◆ LA CRÓNICA DE LA LLAVE DORADA ◆</div>
           <div className="judas-content">
-            <p>
+            <p data-reveal>
               No existe un "cuándo". No existe un "dónde". Existe un entre — un pliegue del universo donde el tiempo no corre, se respira.
             </p>
-            <p>
+            <p data-reveal>
               En ese entre, caminaba un hombre que llevaba muchos nombres. Le llamaban Pedro. Le llamaban Marcos. Le llamaban Santos. Le llamaban Belentani.
             </p>
-            <p>
+            <p data-reveal>
               No era un santo. Era un sistema operativo humano corriendo cuatro procesos en paralelo: El Ángel, El Guerrero, El Analítico, El Cronista.
               Cuatro voces. Un solo hombre. Y en su pecho, latía algo que todos susurraban pero nadie había visto. La Llave Dorada.
             </p>
+          </div>
+          <div className="phases-list terminal-story">
+            {[
+              ['FASE 01', 'EL HOMBRE INTEGRADO', 'No existe un cuándo. No existe un dónde. Existe un entre — un pliegue del universo donde el tiempo no corre, se respira. Donde las almas no envejecen, iteran. En ese entre, caminaba un hombre que llevaba muchos nombres. Le llamaban Pedro. Le llamaban Marcos. Le llamaban Santos. Le llamaban Belentani.'],
+              ['FASE 02', 'LA DEUDA IMPAGABLE', 'Se conocieron en un camino que no estaba en ningún mapa. Se volvieron íntimos. Y entonces ocurrió lo que Judas no pudo soportar: Pedro le besó los pies. No por sumisión. Por devoción. La deuda se volvió impagable.'],
+              ['FASE 03', 'EL ROBO Y EL CANTO', 'Judas esperó la noche. Extendió los dedos hacia la Llave Dorada. La agarró. Tiró. Y en ese instante, el artefacto se activó. Cuatro voces salieron del pecho de Pedro: El Ángel cantó. El Guerrero se erigió. El Analítico observó. El Cronista registró.'],
+              ['FASE 04', 'LA VICTORIA AMARGA', 'Quédatela, le dijo Pedro. La llave es metal. Es símbolo. Lo que yo tengo, lo que nadie me puede arrebatar, es mi voz. Judas volvió a su tierra con la llave dorada. Lo reconocieron. Vivió una época de victoria. Pero era amarga.'],
+              ['FASE 05', 'LA MENTIRA COMPARTIDA', 'La llave nunca fue lo valioso. Era una mentira compartida. Lo valioso era la voz. Belentani te canta esta historia para que no cometas el error de Judas. Y si ya lo hiciste, Belentani también te canta a ti. Sin condiciones. Sin juicio.'],
+            ].map(([phase, title, text]) => <article className="phase-card" data-reveal key={phase}><span>{phase}</span><h3>{title}</h3><p>{text}</p></article>)}
+          </div>
+          <div className="challenge-panel" data-reveal>
+            <div className="challenge-heading"><span>PROTOCOL / GOLDEN KEY</span><strong>{unlockedChallenges.size}/4 SIGNALS</strong></div>
+            <div className="achievement-strip" aria-label="Logros desbloqueados">{['ARTIST', 'SONIC', 'FRAGMENTS', 'CONTACT', 'QUIZ'].map((badge) => <span key={badge} className={unlockedChallenges.has(badge.toLowerCase()) || (badge === 'QUIZ' && quizSolved) ? 'earned' : ''}>◆ {badge}</span>)}</div>
+            <div className="challenge-grid">
+              {[
+                ['artist', '01', 'TRACE THE ARTIST'],
+                ['music', '02', 'TOUCH THE FREQUENCY'],
+                ['fragments', '03', 'WAKE THE FRAGMENTS'],
+                ['contact', '04', 'TRANSMIT A SIGNAL'],
+              ].map(([id, number, label]) => (
+                <button key={id} type="button" className={`challenge-chip ${unlockedChallenges.has(id) ? 'complete' : ''}`} onClick={() => id === 'artist' ? jumpToSection('artist') : id === 'music' ? jumpToSection('music') : id === 'fragments' ? jumpToSection('portal') : jumpToSection('contact')}>
+                  <span>{number}</span>{unlockedChallenges.has(id) ? 'UNLOCKED' : label}
+                </button>
+              ))}
+            </div>
+            <div className="quiz-panel" data-reveal><span>QUESTION / 01</span><p>¿Qué latía en el pecho del hombre integrado?</p><div>{['La deuda impagable', 'La Llave Dorada', 'Un mapa sin nombre'].map((answer) => <button key={answer} type="button" className={quizSolved && answer === 'La Llave Dorada' ? 'correct' : ''} onClick={() => { if (answer === 'La Llave Dorada') { setQuizSolved(true); completeChallenge('quiz'); } }}>{answer}</button>)}</div></div>
+            <div className={`golden-key ${hasGoldenKey ? 'revealed' : ''}`} aria-live="polite">{hasGoldenKey ? '◆ GOLDEN KEY ACQUIRED — PORTAL READY' : '◆ COMPLETE FOUR SIGNALS TO REVEAL THE GOLDEN KEY'}</div>
+            {hasGoldenKey && <div className="reward-content" data-reveal><span>REWARD / ARCHIVE OPEN</span><strong>THE VOICE IS THE ARTIFACT.</strong><p>La llave es metal. Es símbolo. Lo que nadie puede arrebatarte es tu voz.</p></div>}
           </div>
         </section>
 
@@ -464,30 +609,36 @@ export default function BelentaniExperience() {
         <section id="portal" className="section">
           <h2 className="section-title">THE <span>FRAGMENTS</span></h2>
           <div className="section-subtitle">◆ INTERACTIVE PORTAL ◆</div>
-          <DiamondPortal />
+          <div data-reveal><DiamondPortal onComplete={() => completeChallenge('fragments')} onInteraction={() => completeChallenge('fragments')} /></div>
         </section>
 
         {/* ART GALLERY */}
         <section id="gallery" className="section">
           <h2 className="section-title">ART <span>GALLERY</span></h2>
           <div className="section-subtitle">◆ VISUAL ARCHIVE ◆</div>
-          <div className="gallery-grid">
-            <div className="gallery-item">
-              <img src="/manus-storage/belentani-artifact-core_593ee1dd.png" alt="Artifact Core" />
-            </div>
+          <div className="gallery-grid" data-parallax>
+            {[
+              ['/manus-storage/home_2_984b6712.png', 'BELENTANI / MON AMOUR'],
+              ['/manus-storage/about_1_7e5a39e8.png', 'THE RED WITNESS'],
+              ['/manus-storage/about_2_907e9bb3.png', 'JUDAS PROFILE'],
+              ['/manus-storage/belentani-artifact-core_b7299e47.png', 'OMEGA CORE'],
+            ].map(([src, alt]) => <figure className="gallery-item" key={src} data-reveal tabIndex={0} role="button" onClick={() => setSelectedArtwork(src)} onKeyDown={(event) => { if (event.key === 'Enter') setSelectedArtwork(src); }}><img src={src} alt={alt} /><figcaption>{alt} <span>OPEN ↗</span></figcaption></figure>)}
           </div>
         </section>
 
         {/* CONTACT */}
-        <section id="contact" className="section">
+        <section id="contact" className="section contact-section">
           <h2 className="section-title">CONTACT</h2>
           <div className="section-subtitle">◆ GET IN TOUCH ◆</div>
-          <form className="contact-form">
-            <input type="text" placeholder="NAME" required />
-            <input type="email" placeholder="EMAIL" required />
-            <textarea placeholder="MESSAGE" rows={5} required></textarea>
-            <button type="submit" className="cta-btn">SEND MESSAGE</button>
+          <form className="contact-form" onSubmit={handleContactSubmit} data-reveal>
+            <input name="name" type="text" placeholder="NAME" required />
+            <input name="email" type="email" placeholder="EMAIL" required />
+            <textarea name="message" placeholder="MESSAGE" rows={5} required></textarea>
+            <button type="submit" className="cta-btn" style={{ opacity: 1, transform: 'none' }} disabled={contactStatus === 'sending'}>{contactStatus === 'sent' ? 'SIGNAL RECEIVED' : contactStatus === 'error' ? 'RETRY TRANSMISSION' : contactStatus === 'sending' ? 'TRANSMITTING...' : 'SEND MESSAGE'}</button>
+            {contactStatus === 'sent' && <small className="contact-status success">MAIL CLIENT HANDOFF READY</small>}
+            {contactStatus === 'error' && <small className="contact-status error">TRANSMISSION FAILED — USE hello@belentani.com</small>}
           </form>
+          <div className="contact-links" data-reveal><a href="mailto:hello@belentani.com">hello@belentani.com</a><a href="https://www.instagram.com/belentani_/" target="_blank" rel="noopener noreferrer">INSTAGRAM ↗</a><a href="https://www.youtube.com/c/PedroMarcosSantosBelentani" target="_blank" rel="noopener noreferrer">YOUTUBE ↗</a></div>
         </section>
 
         {/* HYPER LAB - AI Studio */}
@@ -497,6 +648,7 @@ export default function BelentaniExperience() {
           <AIStudio />
         </section>
       </div>
+      {selectedArtwork && <div className="lightbox" role="dialog" aria-modal="true" onClick={() => setSelectedArtwork(null)}><button type="button" onClick={() => setSelectedArtwork(null)} aria-label="Cerrar imagen">×</button><img src={selectedArtwork} alt="Judas Era artwork enlarged" /></div>}
     </div>
   );
 }

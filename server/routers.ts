@@ -2,6 +2,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { llmRouter } from "./llm-providers";
+import { generateImage } from "./_core/imageGeneration";
+import { z } from "zod";
 import { publicProcedure, router } from "./_core/trpc";
 
 export const appRouter = router({
@@ -19,6 +21,14 @@ export const appRouter = router({
   }),
 
   llm: llmRouter,
+  visual: router({
+    generateConcept: publicProcedure
+      .input(z.object({ prompt: z.string().min(3).max(500) }))
+      .mutation(async ({ input }) => {
+        const prompt = `Concept art for BELENTANI / JUDAS ERA. Absolute black, blood red neon, antique gold, cosmic artifact, ritual sci-fi, premium album visual, no text, no logos. User direction: ${input.prompt}`;
+        return generateImage({ prompt, quality: "medium" });
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
