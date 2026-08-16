@@ -124,3 +124,9 @@ Nota: esta lista conserva los pendientes previos y registra las nuevas solicitud
 - [x] Convertir la interacción musical en un reto de escucha con selección de pista y progreso visible
 - [x] Añadir skeleton visual al estado de carga de Hyper Lab y renombrar el estado de respuestas como reveal progresivo
 - [x] Guardar checkpoint definitivo después de la validación final y entregar handoff verificable
+
+- [x] Preservar la animación original de autor de BELENTANI y no sustituirla por efectos nuevos
+- [x] Auditar MANUS-AI-SKILLS-ALL.zip sólo como referencia de herramientas compatibles
+- [x] Comparar la lógica original de animación con la implementación actual
+- [x] Restaurar la versión original o integrar sus partes sin alterar su identidad
+- [x] Validar visualmente la animación restaurada y guardar checkpoint de reversión

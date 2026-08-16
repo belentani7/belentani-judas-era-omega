@@ -30,6 +30,7 @@ export default function BelentaniExperience() {
   const [cursorLabel, setCursorLabel] = useState('');
   const cursorDotRef = useRef<HTMLDivElement>(null);
   const cursorRingRef = useRef<HTMLDivElement>(null);
+  const scrollProgressRef = useRef(0);
 
   const completeChallenge = (id: string) => {
     setUnlockedChallenges((previous) => {
@@ -107,12 +108,11 @@ export default function BelentaniExperience() {
     const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0x000000, 1);
 
     // Post-processing with bloom
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.5, 0.8, 0.1);
     composer.addPass(bloomPass);
 
     // Lighting
@@ -122,7 +122,7 @@ export default function BelentaniExperience() {
     scene.add(keyLight);
 
     // Create artifact core with shader
-    const coreGeo = new THREE.IcosahedronGeometry(8, 4);
+    const coreGeo = new THREE.IcosahedronGeometry(12, 20);
     const coreMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
@@ -130,10 +130,13 @@ export default function BelentaniExperience() {
         uColor2: { value: new THREE.Color(0xffd700) }
       },
       vertexShader: `
+        uniform float uTime;
         varying vec3 vNormal;
         varying float vDisplacement;
         varying vec3 vPosition;
 
+        vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
         vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
         vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
         vec3 fade(vec3 t) { return t*t*t*(t*(t*6.0-15.0)+10.0); }
@@ -248,7 +251,7 @@ export default function BelentaniExperience() {
       }
     }
     generateArcs();
-    const arcInterval = window.setInterval(generateArcs, 140);
+    const arcInterval = window.setInterval(generateArcs, 100);
 
     // Ring
     const ringGeo = new THREE.RingGeometry(18, 30, 128, 1);
@@ -328,7 +331,7 @@ export default function BelentaniExperience() {
 
       camera.position.x += (targetMouseX * 8 - camera.position.x) * 0.05;
       camera.position.y += (targetMouseY * 8 - camera.position.y) * 0.05;
-      camera.position.z = 45 - scrollProgress * 25;
+      camera.position.z = 45 - scrollProgressRef.current * 25;
       camera.lookAt(core.position);
 
       core.rotation.y = elapsedTime * 0.1;
@@ -388,6 +391,17 @@ export default function BelentaniExperience() {
         if (revealNodes.length) gsap.fromTo(revealNodes, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.7, stagger: 0.08, ease: 'power3.out', scrollTrigger: { trigger: section, start: 'top 72%' } });
         const parallaxNode = section.querySelector<HTMLElement>('[data-parallax]');
         if (parallaxNode) gsap.to(parallaxNode, { yPercent: -10, ease: 'none', scrollTrigger: { trigger: section, scrub: true, start: 'top bottom', end: 'bottom top' } });
+      });
+
+      ['home', 'portal', 'studio'].forEach((sec, i) => {
+        ScrollTrigger.create({
+          trigger: `#${sec}`,
+          start: 'top center',
+          end: 'bottom center',
+          onUpdate: (self) => {
+            scrollProgressRef.current = self.progress * (i + 1) / 3;
+          },
+        });
       });
 
       sections.forEach((sec, i) => {
