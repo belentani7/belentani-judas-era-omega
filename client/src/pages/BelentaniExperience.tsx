@@ -13,6 +13,7 @@ const DiamondPortal = lazy(() => import('../components/DiamondPortal').then(({ D
 const AIStudio = lazy(() => import('../components/AIStudio').then(({ AIStudio: Component }) => ({ default: Component })));
 const MusicStudio = lazy(() => import('../components/MusicStudio').then(({ MusicStudio: Component }) => ({ default: Component })));
 import { buildContactMailto } from '../lib/contact';
+import { validateContactPayload } from '../lib/pvc-omega';
 import '../styles/belentani.css';
 
 gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
@@ -54,6 +55,11 @@ export default function BelentaniExperience() {
     const message = String(formData.get('message') ?? '').trim();
     setContactStatus('sending');
     try {
+      const envelope = validateContactPayload(name, email, message);
+      if (envelope.validationStatus === 'FAILED') {
+        setContactStatus('error');
+        return;
+      }
       const mailto = buildContactMailto({ name, email, message });
       const handoff = document.createElement('a');
       handoff.href = mailto;
