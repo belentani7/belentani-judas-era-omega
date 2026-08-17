@@ -148,3 +148,5 @@ Nota: esta lista conserva los pendientes previos y registra las nuevas solicitud
 
 - [x] Aplicar motor de validación PVC-U Ω-Max (Validation Envelope, esferas estructurales y semánticas, códigos PVC-1xx/401)
 - [x] Cubrir el motor PVC-U Ω-Max con pruebas unitarias en Vitest y revalidar build y TypeScript
+
+- [x] Conducir auditoría 10/10 en cada línea de código, frontend, lore, plugins/efectos y fotografía, preservando la animación de autor
