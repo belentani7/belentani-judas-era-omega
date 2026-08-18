@@ -152,3 +152,5 @@ Nota: esta lista conserva los pendientes previos y registra las nuevas solicitud
 - [x] Conducir auditoría 10/10 en cada línea de código, frontend, lore, plugins/efectos y fotografía, preservando la animación de autor
 
 - [x] Ejecutar auditoría estricta de 6 pilares (Back, Front, Utilidad, Relevancia, Potencial, Identidad) con umbral 10/10
+
+- [x] Ejecutar auditoría rigurosa basada en evidencia y gate 10/10 antes de exportar a un repositorio nuevo de GitHub
